@@ -820,10 +820,10 @@ function getCourseBlockBias(courseId) {
   }
 
   return {
-    top: seed % 7,
-    bottom: Math.floor(seed / 3) % 7,
-    left: Math.floor(seed / 9) % 6,
-    right: Math.floor(seed / 15) % 6,
+    top: (seed % 7) * 2.5,
+    bottom: (Math.floor(seed / 3) % 7) * 2.5,
+    left: (Math.floor(seed / 9) % 6) * 2.5,
+    right: (Math.floor(seed / 15) % 6) * 2.5,
   };
 }
 
