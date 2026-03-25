@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: write
+  pages: write
 
 concurrency:
   group: pages
@@ -30,6 +31,36 @@ jobs:
 
       - name: Build
         run: npm run build
+
+      - name: Ensure Pages source is gh-pages
+        uses: actions/github-script@v7
+        continue-on-error: true
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+
+            try {
+              await github.request("POST /repos/{owner}/{repo}/pages", {
+                owner,
+                repo,
+                source: { branch: "gh-pages", path: "/" },
+              });
+              core.info("Created GitHub Pages configuration.");
+            } catch (err) {
+              if (err.status === 409 || err.status === 422) {
+                await github.request("PUT /repos/{owner}/{repo}/pages", {
+                  owner,
+                  repo,
+                  source: { branch: "gh-pages", path: "/" },
+                });
+                core.info("Updated GitHub Pages source to gh-pages.");
+              } else {
+                core.warning(`Could not auto-configure Pages: ${err.message}`);
+                throw err;
+              }
+            }
 
       - name: Deploy to gh-pages branch
         uses: peaceiris/actions-gh-pages@v4
