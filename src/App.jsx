@@ -196,13 +196,13 @@ const SCHOOL_TABS = [
 ];
 
 const DATA_URLS = {
-  uciCsv: "/data/uci_courses.csv",
-  ucbCsv: "/data/ucb_courses.csv",
-  ucb6Raw: "/data/ucb_6.txt",
-  uclaCsv: "/data/ucla_courses.csv",
-  uclaApi: "/data/ucla_courses_api_all_blocks.csv",
-  uciRaw: "/data/uci.txt",
-  ucbRaw: "/data/ei.txt",
+  uciCsv: "./data/uci_courses.csv",
+  ucbCsv: "./data/ucb_courses.csv",
+  ucb6Raw: "./data/ucb_6.txt",
+  uclaCsv: "./data/ucla_courses.csv",
+  uclaApi: "./data/ucla_courses_api_all_blocks.csv",
+  uciRaw: "./data/uci.txt",
+  ucbRaw: "./data/ei.txt",
 };
 
 function normalizeText(value) {
