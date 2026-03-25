@@ -32,7 +32,7 @@ jobs:
       - name: Build
         run: npm run build
 
-      - name: Ensure Pages source is github-pages
+      - name: Ensure Pages source is gh-pages
         uses: actions/github-script@v7
         continue-on-error: true
         with:
@@ -45,7 +45,7 @@ jobs:
               await github.request("POST /repos/{owner}/{repo}/pages", {
                 owner,
                 repo,
-                source: { branch: "github-pages", path: "/" },
+                source: { branch: "gh-pages", path: "/" },
               });
               core.info("Created GitHub Pages configuration.");
             } catch (err) {
@@ -53,18 +53,18 @@ jobs:
                 await github.request("PUT /repos/{owner}/{repo}/pages", {
                   owner,
                   repo,
-                  source: { branch: "github-pages", path: "/" },
+                  source: { branch: "gh-pages", path: "/" },
                 });
-                core.info("Updated GitHub Pages source to github-pages.");
+                core.info("Updated GitHub Pages source to gh-pages.");
               } else {
                 core.warning(`Could not auto-configure Pages: ${err.message}`);
                 throw err;
               }
             }
 
-      - name: Deploy to github-pages branch
+      - name: Deploy to gh-pages branch
         uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./dist
-          publish_branch: github-pages
+          publish_branch: gh-pages
