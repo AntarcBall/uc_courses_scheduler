@@ -1,0 +1,21 @@
+﻿fetch("https://sa.ucla.edu/ro/ClassSearch/Public/Search/GetLevelSeparatedSearchData?input=%7B%22search_by%22%3A%22subject%22%2C%22term_cd%22%3A%22261%22%2C%22subj_area_cd%22%3A%22BIOENGR%22%2C%22ses_grp_cd%22%3A%22A8%22%7D&level=2", {
+  "headers": {
+    "accept": "*/*",
+    "accept-language": "ko-KR,ko;q=0.9",
+    "cache-control": "no-cache",
+    "pragma": "no-cache",
+    "sec-ch-ua": "\"Not:A-Brand\";v=\"99\", \"Brave\";v=\"145\", \"Chromium\";v=\"145\"",
+    "sec-ch-ua-mobile": "?0",
+    "sec-ch-ua-platform": "\"Windows\"",
+    "sec-fetch-dest": "empty",
+    "sec-fetch-mode": "cors",
+    "sec-fetch-site": "same-origin",
+    "sec-gpc": "1",
+    "x-requested-with": "XMLHttpRequest"
+  },
+  "referrer": "https://sa.ucla.edu/ro/public/soc",
+  "body": null,
+  "method": "GET",
+  "mode": "cors",
+  "credentials": "include"
+});

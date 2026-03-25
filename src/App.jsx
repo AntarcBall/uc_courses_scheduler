@@ -1,6 +1,7 @@
 ﻿import { useEffect, useMemo, useState } from "react";
 
 const STORAGE_KEY = "course-dashboard-selection-v1";
+const HIDDEN_STORAGE_KEY = "course-dashboard-hidden-v1";
 const SLOT_MINUTES = 30;
 const MIN_ROW_HEIGHT = 42;
 const TIMETABLE_START_MINUTE = 7 * 60;
@@ -84,6 +85,33 @@ function dedupeCoursesByTime(courses) {
     seen.add(key);
     return true;
   });
+}
+
+function getCourseWeekdayCount(course) {
+  if (!course || !Array.isArray(course.sessions) || course.sessions.length === 0) {
+    return 0;
+  }
+
+  const days = new Set(
+    course.sessions
+      .map((session) => normalizeDayForKey(session.day))
+      .filter((day) => !!day)
+  );
+  return days.size;
+}
+
+function isLabCourse(course) {
+  const haystack = [
+    normalizeText(course?.name),
+    normalizeText(course?.code),
+    normalizeText(course?.area),
+    normalizeText(course?.label),
+    normalizeText(course?.description),
+  ]
+    .join(" ")
+    .toLowerCase();
+
+  return haystack.includes("lab");
 }
 
 const SCHOOL_TABS = [
@@ -743,6 +771,28 @@ function loadFromStorage() {
   }
 }
 
+function loadHiddenFromStorage() {
+  try {
+    const raw = localStorage.getItem(HIDDEN_STORAGE_KEY);
+    if (!raw) {
+      return { UCI: [], UCB: [], UCLA: [] };
+    }
+
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object") {
+      return { UCI: [], UCB: [], UCLA: [] };
+    }
+
+    return {
+      UCI: Array.isArray(parsed.UCI) ? parsed.UCI : [],
+      UCB: Array.isArray(parsed.UCB) ? parsed.UCB : [],
+      UCLA: Array.isArray(parsed.UCLA) ? parsed.UCLA : [],
+    };
+  } catch {
+    return { UCI: [], UCB: [], UCLA: [] };
+  }
+}
+
 function sanitizeSelectionState(state, data) {
   const next = { ...state };
   SCHOOL_TABS.forEach((school) => {
@@ -773,6 +823,10 @@ function sanitizeSelectionState(state, data) {
         return false;
       }
 
+      if (isLabCourse(course)) {
+        return false;
+      }
+
       const signature = getCourseTimeSignature(course);
       if (!signature) {
         return true;
@@ -780,6 +834,17 @@ function sanitizeSelectionState(state, data) {
 
       return keep.has(id);
     });
+  });
+  return next;
+}
+
+function sanitizeHiddenState(state, data) {
+  const next = { ...state };
+  SCHOOL_TABS.forEach((school) => {
+    const key = school.id;
+    const validIds = new Set((data[key] || []).map((course) => course.id));
+    const hidden = Array.isArray(next[key]) ? next[key] : [];
+    next[key] = hidden.filter((id) => validIds.has(id));
   });
   return next;
 }
@@ -827,6 +892,10 @@ function getCourseBlockBias(courseId) {
   };
 }
 
+function getNeutralBlockBias() {
+  return { top: 0, bottom: 0, left: 0, right: 0 };
+}
+
 function timeToLabel(minutes) {
   const h = Math.floor(minutes / 60);
   const m = minutes % 60;
@@ -854,7 +923,7 @@ function getTimelineRange(courses) {
   return { start, end: Math.max(end, start + SLOT_MINUTES * 2) };
 }
 
-function Timetable({ courses, previewCourse }) {
+function Timetable({ courses, previewCourse, useOverlapBias }) {
   const coursesForDisplay = useMemo(() => {
     if (!previewCourse) {
       return courses;
@@ -948,7 +1017,9 @@ function Timetable({ courses, previewCourse }) {
                 const start = Math.max(sessionData.start, bounds.start);
                 const end = Math.min(sessionData.end, bounds.end);
                 const isPreview = sessionData.isPreview;
-                const bias = getCourseBlockBias(sessionData.course.id);
+                const bias = useOverlapBias
+                  ? getCourseBlockBias(sessionData.course.id)
+                  : getNeutralBlockBias();
 
                 if (end <= bounds.start || start >= bounds.end || end <= start) {
                   return null;
@@ -1007,8 +1078,12 @@ export default function App() {
   const [activeSchool, setActiveSchool] = useState("UCI");
   const [coursesBySchool, setCoursesBySchool] = useState(null);
   const [selectedBySchool, setSelectedBySchool] = useState(loadFromStorage);
+  const [hiddenBySchool, setHiddenBySchool] = useState(loadHiddenFromStorage);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [hideHighWeekdayCourses, setHideHighWeekdayCourses] = useState(false);
+  const [hideThreeWeekdayCourses, setHideThreeWeekdayCourses] = useState(false);
+  const [useOverlapBias, setUseOverlapBias] = useState(true);
   const [mouseUpCourseId, setMouseUpCourseId] = useState(null);
   const [mouseUpTimerId, setMouseUpTimerId] = useState(null);
   const [previewCourseId, setPreviewCourseId] = useState(null);
@@ -1023,8 +1098,10 @@ export default function App() {
           return;
         }
 
-        const safe = sanitizeSelectionState(selectedBySchool, courses);
-        setSelectedBySchool(safe);
+        const safeSelection = sanitizeSelectionState(selectedBySchool, courses);
+        const safeHidden = sanitizeHiddenState(hiddenBySchool, courses);
+        setSelectedBySchool(safeSelection);
+        setHiddenBySchool(safeHidden);
         setCoursesBySchool(courses);
       })
       .catch((err) => {
@@ -1051,6 +1128,13 @@ export default function App() {
   }, [selectedBySchool, coursesBySchool]);
 
   useEffect(() => {
+    if (!coursesBySchool) {
+      return;
+    }
+    localStorage.setItem(HIDDEN_STORAGE_KEY, JSON.stringify(hiddenBySchool));
+  }, [hiddenBySchool, coursesBySchool]);
+
+  useEffect(() => {
     return () => {
       if (mouseUpTimerId) {
         clearTimeout(mouseUpTimerId);
@@ -1063,7 +1147,23 @@ export default function App() {
 
   const currentCourses = coursesBySchool?.[activeSchool] ?? [];
   const selectedSet = new Set(selectedBySchool?.[activeSchool] ?? []);
-  const visibleCourses = useMemo(() => dedupeCoursesByTime(currentCourses), [currentCourses]);
+  const hiddenSet = new Set(hiddenBySchool?.[activeSchool] ?? []);
+  const visibleCourses = useMemo(() => {
+    const deduped = dedupeCoursesByTime(currentCourses).filter((course) => !isLabCourse(course));
+    return deduped.filter((course) => {
+      if (hiddenSet.has(course.id)) {
+        return false;
+      }
+      const weekdayCount = getCourseWeekdayCount(course);
+      if (hideThreeWeekdayCourses && weekdayCount === 3) {
+        return false;
+      }
+      if (hideHighWeekdayCourses && weekdayCount >= 4) {
+        return false;
+      }
+      return true;
+    });
+  }, [currentCourses, hideHighWeekdayCourses, hideThreeWeekdayCourses, hiddenSet]);
   const selectedCourses = useMemo(
     () => visibleCourses.filter((course) => selectedSet.has(course.id)),
     [selectedSet, visibleCourses]
@@ -1095,6 +1195,37 @@ export default function App() {
     });
   };
 
+  const hideCourse = (courseId) => {
+    setHiddenBySchool((prev) => {
+      const current = new Set(prev[activeSchool] || []);
+      current.add(courseId);
+      return {
+        ...prev,
+        [activeSchool]: [...current],
+      };
+    });
+
+    setSelectedBySchool((prev) => {
+      const current = new Set(prev[activeSchool] || []);
+      current.delete(courseId);
+      return {
+        ...prev,
+        [activeSchool]: [...current],
+      };
+    });
+
+    if (previewCourseId === courseId) {
+      setPreviewCourseId(null);
+    }
+  };
+
+  const resetHiddenCourses = () => {
+    setHiddenBySchool((prev) => ({
+      ...prev,
+      [activeSchool]: [],
+    }));
+  };
+
   const handleCourseMouseUp = (courseId) => {
     if (mouseUpTimerId) {
       clearTimeout(mouseUpTimerId);
@@ -1123,6 +1254,33 @@ export default function App() {
         <p className="lead">
           학교별 과목을 비교하고 같은 화면에서 시간표를 확인할 수 있는 간단한 대시보드입니다.
         </p>
+        <label className="global-filter">
+          <input
+            type="checkbox"
+            checked={hideHighWeekdayCourses}
+            onChange={(event) => setHideHighWeekdayCourses(event.target.checked)}
+          />
+          <span>요일 수가 4~5개인 과목 숨기기</span>
+        </label>
+        <label className="global-filter">
+          <input
+            type="checkbox"
+            checked={hideThreeWeekdayCourses}
+            onChange={(event) => setHideThreeWeekdayCourses(event.target.checked)}
+          />
+          <span>요일 수가 3개인 과목 숨기기</span>
+        </label>
+        <label className="global-filter">
+          <input
+            type="checkbox"
+            checked={useOverlapBias}
+            onChange={(event) => setUseOverlapBias(event.target.checked)}
+          />
+          <span>겹침 랜덤 bias 사용</span>
+        </label>
+        <button type="button" className="global-action-button" onClick={resetHiddenCourses}>
+          현재 UC 숨김 목록 초기화 ({(hiddenBySchool?.[activeSchool] || []).length})
+        </button>
       </header>
 
       <nav className="tabs" aria-label="University tabs">
@@ -1146,24 +1304,40 @@ export default function App() {
             {visibleCourses.map((course) => {
               const isSelected = selectedSet.has(course.id);
               const isMouseUp = mouseUpCourseId === course.id;
+              const weekdayCount = getCourseWeekdayCount(course);
               return (
-                <button
-                  type="button"
-                  key={course.id}
-                  className={`course-item${isSelected ? " active" : ""}${
-                    isMouseUp ? " course-item--release" : ""
-                  }`}
-                  onClick={() => toggle(course.id)}
-                  onMouseUp={() => handleCourseMouseUp(course.id)}
-                >
-                  <span>{course.name}</span>
-                </button>
+                <div key={course.id} className="course-row">
+                  <button
+                    type="button"
+                    className={`course-item${isSelected ? " active" : ""}${
+                      isMouseUp ? " course-item--release" : ""
+                    }`}
+                    onClick={() => toggle(course.id)}
+                    onMouseUp={() => handleCourseMouseUp(course.id)}
+                  >
+                    <span className="course-day-count">{weekdayCount}</span>
+                    <span className="course-name">{course.name}</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="course-hide-button"
+                    onClick={() => hideCourse(course.id)}
+                    aria-label={`${course.name} 숨기기`}
+                    title="이 과목을 숨김 목록에 추가"
+                  >
+                    X
+                  </button>
+                </div>
               );
             })}
           </div>
         </aside>
 
-        <Timetable courses={selectedCourses} previewCourse={previewCourse} />
+        <Timetable
+          courses={selectedCourses}
+          previewCourse={previewCourse}
+          useOverlapBias={useOverlapBias}
+        />
       </section>
     </main>
   );
