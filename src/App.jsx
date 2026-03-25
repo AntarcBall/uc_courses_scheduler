@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useState } from "react";
+﻿import React, { useEffect, useMemo, useState } from "react";
 
 const STORAGE_KEY = "course-dashboard-selection-v1";
 const HIDDEN_STORAGE_KEY = "course-dashboard-hidden-v1";
