@@ -102,7 +102,7 @@ h1 {
 
 .main-grid {
   display: grid;
-  grid-template-columns: 672px 1fr;
+  grid-template-columns: 874px 1fr;
   gap: 16px;
   align-items: start;
 }
@@ -161,8 +161,9 @@ h1 {
 }
 
 .course-item {
-  flex: 1 1 auto;
-  width: auto;
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
   text-align: left;
   display: flex;
   align-items: center;
@@ -189,6 +190,32 @@ h1 {
 .course-item.active {
   border-color: rgba(142, 198, 255, 0.85);
   background: rgba(142, 198, 255, 0.12);
+}
+
+.course-item--session-6 {
+  background: rgba(31, 15, 30, 0.6);
+}
+
+.course-item--session-6:hover {
+  background: rgba(45, 20, 44, 0.7);
+}
+
+.course-item--session-6.active {
+  border-color: rgba(255, 142, 220, 0.85);
+  background: rgba(255, 142, 220, 0.12);
+}
+
+.course-item--session-8 {
+  background: rgba(15, 31, 22, 0.6);
+}
+
+.course-item--session-8:hover {
+  background: rgba(20, 45, 30, 0.7);
+}
+
+.course-item--session-8.active {
+  border-color: rgba(142, 255, 178, 0.85);
+  background: rgba(142, 255, 178, 0.12);
 }
 
 .course-hide-button {
@@ -223,7 +250,22 @@ h1 {
   background: rgba(142, 198, 255, 0.14);
   border: 1px solid rgba(142, 198, 255, 0.32);
   color: #d7ebff;
-  font-size: 12px;
+  font-size: 24px;
+  font-family: "Bebas Neue", Impact, "Arial Narrow", sans-serif;
+}
+
+.course-session-badge {
+  flex: 0 0 auto;
+  min-width: 28px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: rgba(255, 206, 120, 0.18);
+  border: 1px solid rgba(255, 206, 120, 0.38);
+  color: #ffe6ba;
+  font-size: 24px;
   font-family: "Bebas Neue", Impact, "Arial Narrow", sans-serif;
 }
 
@@ -317,6 +359,10 @@ h1 {
   background: rgba(255, 255, 255, 0.08);
 }
 
+.day-line--hour {
+  height: 3px;
+}
+
 .course-block {
   position: absolute;
   left: 7px;
@@ -327,7 +373,7 @@ h1 {
   background: rgba(17, 24, 42, 0.55);
   display: flex;
   flex-direction: column;
-  justify-content: center;
+  justify-content: flex-start;
   gap: 2px;
   overflow: hidden;
   font-size: 12px;
@@ -335,9 +381,7 @@ h1 {
 }
 
 .course-block strong {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  word-break: break-word;
   font-family: "Noto Sans KR", sans-serif;
 }
 
@@ -367,6 +411,114 @@ h1 {
 
 .error {
   color: #ffd0d0;
+}
+
+.combo-controls {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  backdrop-filter: blur(8px);
+}
+
+.combo-warning {
+  margin: 0;
+  color: #ffb347;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.combo-activate-button {
+  border: 1px solid rgba(142, 198, 255, 0.5);
+  background: rgba(142, 198, 255, 0.12);
+  color: var(--text);
+  border-radius: 10px;
+  padding: 10px 18px;
+  font-family: "Bebas Neue", Impact, "Arial Narrow", sans-serif;
+  font-size: 22px;
+  cursor: pointer;
+  transition: transform 180ms ease, border-color 180ms ease, background 180ms ease;
+}
+
+.combo-activate-button:hover:not(:disabled) {
+  transform: translateY(-2px);
+  border-color: rgba(142, 198, 255, 0.85);
+  background: rgba(142, 198, 255, 0.2);
+}
+
+.combo-activate-button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.combo-nav {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.combo-nav-label {
+  font-family: "Bebas Neue", Impact, "Arial Narrow", sans-serif;
+  font-size: 22px;
+  color: var(--text);
+  min-width: 120px;
+}
+
+.combo-credit-sum {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: rgba(255, 206, 120, 0.15);
+  border: 1px solid rgba(255, 206, 120, 0.35);
+  color: #ffe6ba;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.combo-nav-button {
+  border: 1px solid rgba(142, 198, 255, 0.4);
+  background: rgba(142, 198, 255, 0.1);
+  color: var(--text);
+  border-radius: 8px;
+  padding: 7px 14px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: transform 150ms ease, border-color 150ms ease, background 150ms ease;
+}
+
+.combo-nav-button:hover:not(:disabled) {
+  transform: translateY(-1px);
+  border-color: rgba(142, 198, 255, 0.7);
+  background: rgba(142, 198, 255, 0.18);
+}
+
+.combo-nav-button:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.combo-exit-button {
+  border: 1px solid rgba(255, 130, 130, 0.45);
+  background: rgba(255, 130, 130, 0.1);
+  color: #ffc4c4;
+  border-radius: 8px;
+  padding: 7px 14px;
+  font-size: 14px;
+  cursor: pointer;
+  margin-left: auto;
+  transition: transform 150ms ease, border-color 150ms ease, background 150ms ease;
+}
+
+.combo-exit-button:hover {
+  transform: translateY(-1px);
+  border-color: rgba(255, 130, 130, 0.7);
+  background: rgba(255, 130, 130, 0.2);
 }
 
 @keyframes fadeIn {

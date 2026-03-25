@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 
 const STORAGE_KEY = "course-dashboard-selection-v1";
 const HIDDEN_STORAGE_KEY = "course-dashboard-hidden-v1";
@@ -123,6 +123,7 @@ const SCHOOL_TABS = [
 const DATA_URLS = {
   uciCsv: "/data/uci_courses.csv",
   ucbCsv: "/data/ucb_courses.csv",
+  ucb6Raw: "/data/ucb_6.txt",
   uclaCsv: "/data/ucla_courses.csv",
   uclaApi: "/data/ucla_courses_api_all_blocks.csv",
   uciRaw: "/data/uci.txt",
@@ -680,6 +681,7 @@ function parseUcbCourses(rawCsv, scheduleMap) {
       return {
         id: `UCB::${code}::${idx}`,
         university: "UCB",
+        session: 8,
         name,
         code,
         credit,
@@ -689,6 +691,127 @@ function parseUcbCourses(rawCsv, scheduleMap) {
       };
     })
     .filter((item) => item.name);
+}
+
+function isDateRangeLine(line) {
+  return /\b[A-Za-z]{3}\s+\d{1,2},\s+\d{4}\s*-\s*[A-Za-z]{3}\s+\d{1,2},\s+\d{4}\b/.test(line);
+}
+
+function parseUcbSessionSixCourses(rawText) {
+  const lines = rawText.split(/\r?\n/).map((line) => normalizeText(line));
+  const courses = [];
+  let dropped = 0;
+
+  const NOISE_PATTERNS = [
+    /^instruction mode:/i,
+    /^time conflict enrollment allowed$/i,
+    /^section closed$/i,
+    /^how to apply$/i,
+    /^202\d\s+summer\s+session/i,
+    /offered through/i,
+  ];
+
+  const isNoise = (line) => !line || NOISE_PATTERNS.some((pat) => pat.test(line));
+
+  for (let i = 0; i < lines.length; i += 1) {
+    const classMatch = lines[i].match(/^Class #:\s*([0-9A-Za-z-]+)/i);
+    if (!classMatch) {
+      continue;
+    }
+
+    const classNo = normalizeText(classMatch[1]);
+
+    let units = "";
+    if (i + 1 < lines.length) {
+      const unitsMatch = lines[i + 1].match(/^Units:\s*(.+)$/i);
+      if (unitsMatch) {
+        units = normalizeText(unitsMatch[1]);
+      }
+    }
+
+    let dateIdx = -1;
+    for (let j = i - 1; j >= Math.max(0, i - 6); j -= 1) {
+      if (isDateRangeLine(lines[j])) {
+        dateIdx = j;
+        break;
+      }
+    }
+
+    if (dateIdx < 0) {
+      dropped += 1;
+      continue;
+    }
+
+    const dayLine = lines[dateIdx + 1] || "";
+    const timeLine = lines[dateIdx + 2] || "";
+    const sessions = parseDayAndTimes(dayLine, timeLine);
+
+    let titleLine = "";
+    let instructorLine = "";
+
+    const lineAboveDate = dateIdx - 1 >= 0 ? lines[dateIdx - 1] : "";
+    const lineTwoAboveDate = dateIdx - 2 >= 0 ? lines[dateIdx - 2] : "";
+
+    if (!isNoise(lineAboveDate) && !isDateRangeLine(lineAboveDate) && !/^Class #:/i.test(lineAboveDate) && !/^Units:/i.test(lineAboveDate)) {
+      if (!isNoise(lineTwoAboveDate) && !isDateRangeLine(lineTwoAboveDate) && !/^Class #:/i.test(lineTwoAboveDate) && !/^Units:/i.test(lineTwoAboveDate) && lineTwoAboveDate) {
+        titleLine = lineTwoAboveDate;
+        instructorLine = lineAboveDate;
+      } else {
+        titleLine = lineAboveDate;
+        instructorLine = "";
+      }
+    }
+
+    const name = normalizeText(titleLine);
+
+    let code = "";
+    for (let j = Math.max(0, dateIdx - 6); j <= i; j += 1) {
+      const offeredLine = lines[j] || "";
+      const codeMatch = offeredLine.match(
+        /([A-Z][A-Z0-9&/]*\s+\d+[A-Z0-9]*\s+\d{3})\s*-\s*(?:SES|LEC|REC|LAB)/i
+      );
+      if (codeMatch) {
+        code = normalizeCode(codeMatch[1]);
+        break;
+      }
+    }
+
+    if (!code) {
+      code = `CLASS${classNo}`;
+    }
+
+    const locationIdx = dateIdx + 3;
+    const location = locationIdx < i ? normalizeText(lines[locationIdx]) : "";
+
+    const timeRange = parseTimeRange(timeLine);
+    const fallbackTime = timeRange
+      ? `${timeToLabel(timeRange.start)} - ${timeToLabel(timeRange.end)}`
+      : "";
+
+    if (!name || !classNo || !sessions.length) {
+      dropped += 1;
+      continue;
+    }
+
+    courses.push({
+      id: `UCB6::${classNo}::${i}`,
+      university: "UCB",
+      session: 6,
+      name,
+      code,
+      credit: units,
+      instructor: normalizeText(instructorLine),
+      location,
+      fallbackTime,
+      sessions,
+    });
+  }
+
+  if (dropped > 0) {
+    console.warn(`UCB session-6 parser dropped ${dropped} invalid entries.`);
+  }
+
+  return courses;
 }
 
 function normalizeUclaLabel(raw) {
@@ -850,21 +973,37 @@ function sanitizeHiddenState(state, data) {
 }
 
 function parseAllData() {
-  return Promise.all([
-    fetch(DATA_URLS.uciCsv).then((res) => res.text()),
-    fetch(DATA_URLS.ucbCsv).then((res) => res.text()),
-    fetch(DATA_URLS.uclaCsv).then((res) => res.text()),
-    fetch(DATA_URLS.uclaApi).then((res) => res.text()),
-    fetch(DATA_URLS.uciRaw).then((res) => res.text()),
-    fetch(DATA_URLS.ucbRaw).then((res) => res.text()),
-  ]).then(([uciCsv, ucbCsv, uclaCsv, uclaApi, uciRaw, ucbRaw]) => {
+  const inlineData = window.__INLINE_DATA__;
+  const getData = inlineData
+    ? Promise.resolve([
+        inlineData.uciCsv,
+        inlineData.ucbCsv,
+        inlineData.ucb6Raw,
+        inlineData.uclaCsv,
+        inlineData.uclaApi,
+        inlineData.uciRaw,
+        inlineData.ucbRaw,
+      ])
+    : Promise.all([
+        fetch(DATA_URLS.uciCsv).then((res) => res.text()),
+        fetch(DATA_URLS.ucbCsv).then((res) => res.text()),
+        fetch(DATA_URLS.ucb6Raw).then((res) => res.text()),
+        fetch(DATA_URLS.uclaCsv).then((res) => res.text()),
+        fetch(DATA_URLS.uclaApi).then((res) => res.text()),
+        fetch(DATA_URLS.uciRaw).then((res) => res.text()),
+        fetch(DATA_URLS.ucbRaw).then((res) => res.text()),
+      ]);
+
+  return getData.then(([uciCsv, ucbCsv, ucb6Raw, uclaCsv, uclaApi, uciRaw, ucbRaw]) => {
     const uciScheduleMap = parseUciRawSchedule(uciRaw);
     const ucbScheduleMap = parseUcbRawSchedule(ucbRaw);
     const uclaApiMap = parseUclaApiSchedule(uclaApi);
+    const ucbSessionEight = parseUcbCourses(ucbCsv, ucbScheduleMap);
+    const ucbSessionSix = parseUcbSessionSixCourses(ucb6Raw);
 
     return {
       UCI: parseUciCourses(uciCsv, uciScheduleMap),
-      UCB: parseUcbCourses(ucbCsv, ucbScheduleMap),
+      UCB: [...ucbSessionEight, ...ucbSessionSix],
       UCLA: parseUclaCourses(uclaCsv, uclaApiMap),
     };
   });
@@ -878,22 +1017,66 @@ function colorFromId(courseId) {
   return `hsl(${seed}, 82%, 58%)`;
 }
 
-function getCourseBlockBias(courseId) {
+function getCourseWobblyRadius(courseId) {
   let seed = 0;
   for (let i = 0; i < courseId.length; i += 1) {
     seed = (seed * 131 + courseId.charCodeAt(i)) % 9973;
   }
 
-  return {
-    top: (seed % 7) * 4,
-    bottom: (Math.floor(seed / 3) % 7) * 4,
-    left: (Math.floor(seed / 9) % 6) * 4,
-    right: (Math.floor(seed / 15) % 6) * 4,
+  const r = (offset) => {
+    const v = ((seed * (offset + 7)) % 97);
+    return 4 + (v % 16);
   };
+
+  return `${r(1)}px ${r(2)}px ${r(3)}px ${r(4)}px / ${r(5)}px ${r(6)}px ${r(7)}px ${r(8)}px`;
 }
 
-function getNeutralBlockBias() {
-  return { top: 0, bottom: 0, left: 0, right: 0 };
+function coursesOverlap(a, b) {
+  for (const sA of a.sessions) {
+    for (const sB of b.sessions) {
+      if (sA.day === sB.day && sA.start < sB.end && sB.start < sA.end) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+function generateCombinations(courses, enforceBalance) {
+  const MAX_COMBOS = 500;
+  const results = [];
+
+  function backtrack(index, current) {
+    if (results.length >= MAX_COMBOS) {
+      return;
+    }
+
+    if (current.length >= 2) {
+      if (enforceBalance) {
+        const s6 = current.filter((c) => c.session === 6).length;
+        const s8 = current.filter((c) => c.session === 8).length;
+        if (s6 === 1 && s8 === 1) {
+          results.push([...current]);
+        }
+      } else {
+        results.push([...current]);
+      }
+    }
+
+    for (let i = index; i < courses.length; i += 1) {
+      const candidate = courses[i];
+      const hasConflict = current.some((c) => coursesOverlap(c, candidate));
+      if (!hasConflict) {
+        current.push(candidate);
+        backtrack(i + 1, current);
+        current.pop();
+      }
+    }
+  }
+
+  backtrack(0, []);
+  results.sort((a, b) => b.length - a.length);
+  return results;
 }
 
 function timeToLabel(minutes) {
@@ -1004,10 +1187,10 @@ function Timetable({ courses, previewCourse, useOverlapBias }) {
               }}
             >
               <div className="day-lines">
-                {timeline.slice(1).map((_, idx2) => (
+                {timeline.slice(1).map((minute, idx2) => (
                   <span
                     key={`line-${day}-${idx2}`}
-                    className="day-line"
+                    className={minute % 60 === 0 ? "day-line day-line--hour" : "day-line"}
                     style={{ top: `${idx2 * rowHeight}px` }}
                   />
                 ))}
@@ -1017,9 +1200,9 @@ function Timetable({ courses, previewCourse, useOverlapBias }) {
                 const start = Math.max(sessionData.start, bounds.start);
                 const end = Math.min(sessionData.end, bounds.end);
                 const isPreview = sessionData.isPreview;
-                const bias = useOverlapBias
-                  ? getCourseBlockBias(sessionData.course.id)
-                  : getNeutralBlockBias();
+                const wobblyRadius = useOverlapBias
+                  ? getCourseWobblyRadius(sessionData.course.id)
+                  : "8px";
 
                 if (end <= bounds.start || start >= bounds.end || end <= start) {
                   return null;
@@ -1027,20 +1210,15 @@ function Timetable({ courses, previewCourse, useOverlapBias }) {
 
                 const baseTop = ((start - bounds.start) / SLOT_MINUTES) * rowHeight;
                 const baseHeight = ((end - start) / SLOT_MINUTES) * rowHeight;
-                const top = baseTop - bias.top;
-                const height = baseHeight + bias.top + bias.bottom;
-                const leftOffset = 7 - Math.min(6, bias.left);
-                const rightOffset = 7 - Math.min(6, bias.right);
 
                 return (
                   <article
                     key={`${sessionData.course.id}-${day}-${i}`}
                     className="course-block"
                     style={{
-                      top: `${top}px`,
-                      height: `${height}px`,
-                      left: `${leftOffset}px`,
-                      right: `${rightOffset}px`,
+                      top: `${baseTop}px`,
+                      height: `${baseHeight}px`,
+                      borderRadius: wobblyRadius,
                       borderColor: sessionData.color,
                       borderStyle: isPreview ? "dashed" : "solid",
                       background: isPreview ? "rgba(17, 24, 42, 0.35)" : "rgba(17, 24, 42, 0.55)",
@@ -1052,6 +1230,8 @@ function Timetable({ courses, previewCourse, useOverlapBias }) {
                     <strong>{sessionData.course.name}</strong>
                     {isPreview ? <span>미리보기</span> : null}
                     <span>{sessionData.course.code}</span>
+                    <span>{sessionData.course.location || "-"}</span>
+                    <span>{sessionData.course.instructor || "-"}</span>
                   </article>
                   );
                 })}
@@ -1087,7 +1267,10 @@ export default function App() {
   const [mouseUpCourseId, setMouseUpCourseId] = useState(null);
   const [mouseUpTimerId, setMouseUpTimerId] = useState(null);
   const [previewCourseId, setPreviewCourseId] = useState(null);
-  const [previewTimerId, setPreviewTimerId] = useState(null);
+  const [comboMode, setComboMode] = useState(false);
+  const [combinations, setCombinations] = useState([]);
+  const [comboIndex, setComboIndex] = useState(0);
+  const [enforceSessionBalance, setEnforceSessionBalance] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -1139,11 +1322,8 @@ export default function App() {
       if (mouseUpTimerId) {
         clearTimeout(mouseUpTimerId);
       }
-      if (previewTimerId) {
-        clearTimeout(previewTimerId);
-      }
     };
-  }, [mouseUpTimerId, previewTimerId]);
+  }, [mouseUpTimerId]);
 
   const currentCourses = coursesBySchool?.[activeSchool] ?? [];
   const selectedSet = new Set(selectedBySchool?.[activeSchool] ?? []);
@@ -1230,21 +1410,34 @@ export default function App() {
     if (mouseUpTimerId) {
       clearTimeout(mouseUpTimerId);
     }
-    if (previewTimerId) {
-      clearTimeout(previewTimerId);
-    }
     setMouseUpCourseId(courseId);
-    setPreviewCourseId(courseId);
     const timerId = setTimeout(() => {
       setMouseUpCourseId((current) => (current === courseId ? null : current));
     }, 180);
     setMouseUpTimerId(timerId);
-    const previewTimer = setTimeout(() => {
-      setPreviewCourseId((current) => (current === courseId ? null : current));
-      setPreviewTimerId(null);
-    }, 900);
-    setPreviewTimerId(previewTimer);
   };
+
+  const hasSession6 = selectedCourses.some((c) => c.session === 6);
+  const hasSession8 = selectedCourses.some((c) => c.session === 8);
+  const sessionBalanceWarning = enforceSessionBalance && (!hasSession6 || !hasSession8);
+
+  const activateCombos = () => {
+    if (selectedCourses.length < 2) {
+      return;
+    }
+    const combos = generateCombinations(selectedCourses, enforceSessionBalance);
+    setCombinations(combos);
+    setComboIndex(0);
+    setComboMode(true);
+  };
+
+  const exitComboMode = () => {
+    setComboMode(false);
+    setCombinations([]);
+    setComboIndex(0);
+  };
+
+  const comboCoursesForTimetable = comboMode && combinations.length > 0 ? combinations[comboIndex] : null;
 
   return (
     <main className="app-shell">
@@ -1311,11 +1504,14 @@ export default function App() {
                     type="button"
                     className={`course-item${isSelected ? " active" : ""}${
                       isMouseUp ? " course-item--release" : ""
-                    }`}
+                    }${course.session ? ` course-item--session-${course.session}` : ""}`}
                     onClick={() => toggle(course.id)}
                     onMouseUp={() => handleCourseMouseUp(course.id)}
+                    onMouseEnter={() => setPreviewCourseId(course.id)}
+                    onMouseLeave={() => setPreviewCourseId(null)}
                   >
                     <span className="course-day-count">{weekdayCount}</span>
+                    {course.session ? <span className="course-session-badge">S{course.session}</span> : null}
                     <span className="course-name">{course.name}</span>
                   </button>
                   <button
@@ -1333,11 +1529,83 @@ export default function App() {
           </div>
         </aside>
 
-        <Timetable
-          courses={selectedCourses}
-          previewCourse={previewCourse}
-          useOverlapBias={useOverlapBias}
-        />
+        <div style={{ position: "relative" }}>
+          <Timetable
+            courses={comboCoursesForTimetable || selectedCourses}
+            previewCourse={comboMode ? null : previewCourse}
+            useOverlapBias={useOverlapBias}
+          />
+
+          <div className="combo-controls">
+            <label className="global-filter">
+              <input
+                type="checkbox"
+                checked={enforceSessionBalance}
+                onChange={(e) => {
+                  setEnforceSessionBalance(e.target.checked);
+                  if (comboMode) {
+                    exitComboMode();
+                  }
+                }}
+              />
+              <span>세션6 1개 + 세션8 1개 강제</span>
+            </label>
+            {sessionBalanceWarning && (
+              <p className="combo-warning">⚠ 세션6과 세션8 과목을 각각 1개 이상 선택해주세요.</p>
+            )}
+            {!comboMode ? (
+              <button
+                type="button"
+                className="combo-activate-button"
+                disabled={selectedCourses.length < 2 || sessionBalanceWarning}
+                onClick={activateCombos}
+              >
+                조합 탐색 ({selectedCourses.length}개 선택중)
+              </button>
+            ) : (
+              <div className="combo-nav">
+                <span className="combo-nav-label">
+                  {combinations.length > 0
+                    ? `조합 ${comboIndex + 1} / ${combinations.length}`
+                    : "조합 없음"}
+                </span>
+                {comboCoursesForTimetable && (
+                  <span className="combo-credit-sum">
+                    {(() => {
+                      let total = 0;
+                      let hasRange = false;
+                      comboCoursesForTimetable.forEach((c) => {
+                        const m = (c.credit || "").match(/^(\d+)/);
+                        if (m) total += Number(m[1]);
+                        if (/to/i.test(c.credit)) hasRange = true;
+                      });
+                      return `학점: ${total}${hasRange ? "+" : ""}`;
+                    })()}
+                  </span>
+                )}
+                <button
+                  type="button"
+                  className="combo-nav-button"
+                  disabled={comboIndex <= 0}
+                  onClick={() => setComboIndex((i) => Math.max(0, i - 1))}
+                >
+                  ◀ 이전
+                </button>
+                <button
+                  type="button"
+                  className="combo-nav-button"
+                  disabled={comboIndex >= combinations.length - 1}
+                  onClick={() => setComboIndex((i) => Math.min(combinations.length - 1, i + 1))}
+                >
+                  다음 ▶
+                </button>
+                <button type="button" className="combo-exit-button" onClick={exitComboMode}>
+                  ✕ 닫기
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
       </section>
     </main>
   );
