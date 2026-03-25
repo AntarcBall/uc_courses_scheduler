@@ -1078,7 +1078,7 @@ function parseAllData() {
 
     return {
       UCI: parseUciCourses(uciCsv, uciScheduleMap),
-      UCB: [...ucbSessionEight, ...ucbSessionSix],
+      UCB: [...ucbSessionEight, ...ucbSessionSix].filter(c => !/Human Biological Variation/i.test(c.name)),
       UCLA: parseUclaCourses(uclaCsv, uclaApiMap),
     };
   });
@@ -1340,6 +1340,8 @@ export default function App() {
   const [hideThreeWeekdayCourses, setHideThreeWeekdayCourses] = useState(false);
   const [useOverlapBias, setUseOverlapBias] = useState(true);
   const [showOnlyFeatured, setShowOnlyFeatured] = useState(false);
+  const [showIntro, setShowIntro] = useState(true);
+  const [introAgreed, setIntroAgreed] = useState(false);
   const [mouseUpCourseId, setMouseUpCourseId] = useState(null);
   const [mouseUpTimerId, setMouseUpTimerId] = useState(null);
   const [previewCourseId, setPreviewCourseId] = useState(null);
@@ -1520,6 +1522,28 @@ export default function App() {
 
   return (
     <main className="app-shell">
+      {showIntro && (
+        <div className="intro-modal-overlay">
+          <div className="intro-modal-content">
+            <h2>🚨 필독 안내 사항</h2>
+            <ul className="intro-list">
+              <li><strong>⚠️ UCB 중심 & S6 누락</strong>: 본 대시보드는 UCB 중심으로 제작되었으며, 특히 <strong>세션 6(S6) 과목 중 일부는 제작자의 주관적인 판단에 의해 의도적으로 누락</strong>되어 있을 수 있습니다.</li>
+              <li><strong>⚠️ 수강 신청 전 필수 확인</strong>: 이 사이트는 보조용 참고 자료일 뿐입니다. 시간표 변동, 폐강, 오탈자 등이 있을 수 있으므로 <strong>실제 수강 신청 전 반드시 학교 공식 사이트에서 시간표를 교차 검증</strong>하시기 바랍니다.</li>
+              <li><strong>학교 탭 전환</strong>: 상단의 UCI, UCB, UCLA 탭을 클릭해 학교를 변경합니다.</li>
+              <li><strong>과목 선택 및 숨김</strong>: 과목을 클릭하면 시간표에 반영되며, X 버튼을 누르면 목록에서 숨겨집니다. 우측의 <strong>학점인정과목 (★)</strong> 필터도 활용할 수 있습니다.</li>
+              <li><strong>조합 탐색기</strong>: 여러 과목을 선택 후 좌측 하단의 '조합 탐색' 버튼을 누르면 안 겹치는 시간표 조합들을 넘겨볼 수 있습니다 (세션 한 개씩 필수 선택 기믹도 포함).</li>
+            </ul>
+            <label className="intro-agreement">
+              <input type="checkbox" checked={introAgreed} onChange={(e) => setIntroAgreed(e.target.checked)} />
+              <span>위 안내 사항을 모두 읽었으며, 수강 신청 시 본인이 직접 시간표를 다시 확인할 것에 동의합니다.</span>
+            </label>
+            <button className="intro-start-button" disabled={!introAgreed} onClick={() => setShowIntro(false)}>
+              확인 후 시작하기
+            </button>
+          </div>
+        </div>
+      )}
+
       <header className="hero">
         <p className="eyebrow">Course Builder</p>
         <h1>3 universities class planner</h1>
@@ -1556,7 +1580,7 @@ export default function App() {
             checked={showOnlyFeatured}
             onChange={(event) => setShowOnlyFeatured(event.target.checked)}
           />
-          <span>관심 과목만 보기 ★</span>
+          <span>학점인정과목만 보기 ★</span>
         </label>
         <button type="button" className="global-action-button" onClick={resetHiddenCourses}>
           현재 UC 숨김 목록 초기화 ({(hiddenBySchool?.[activeSchool] || []).length})
@@ -1664,7 +1688,7 @@ export default function App() {
                       let total = 0;
                       let hasRange = false;
                       comboCoursesForTimetable.forEach((c) => {
-                        const m = (c.credit || "").match(/^(\d+)/);
+                        const m = (c.credit || "").match(/(\d+(?:\.\d+)?)/);
                         if (m) total += Number(m[1]);
                         if (/to/i.test(c.credit)) hasRange = true;
                       });
