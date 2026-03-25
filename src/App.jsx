@@ -7,6 +7,81 @@ const MIN_ROW_HEIGHT = 42;
 const TIMETABLE_START_MINUTE = 7 * 60;
 const TIMETABLE_END_MINUTE = 19 * 60;
 
+const FEATURED_NAMES_RAW = [
+  "Stress & Coping",
+  "African American Music and US Popular Culture",
+  "Introduction Ancient Rome",
+  "Greek and Roman Myths",
+  "Introduction to General Astronomy",
+  "Introduction to Astrophysics: From Planets to Cosmology",
+  "Introduction to Cognitive Science",
+  "Practical Applications for Artificial Intelligence",
+  "English Language Studies: Broadway Musicals",
+  "Language, Culture, and Film",
+  "Language, Culture and Literature",
+  "Language, Culture, and the Media",
+  "Introduction of the U.S. Legal System for Multilingual Students",
+  "Academic and Public Speaking for Multilingual Students",
+  "Science and Engineering English for Multilingual Students",
+  "The Economics of Sustainable Business and Policy",
+  "Environmental Earth Sciences",
+  "Film and Media Theory",
+  "Critical Issues in Global Studies",
+  "California Natural History",
+  "Introduction to Ancient Egypt",
+  "Introduction to Functional Neuroanatomy",
+  "Introduction to Human Nutrition",
+  "Introduction to New Media",
+  "Introduction to Logic",
+  "Knowledge and Its Limits",
+  "Introduction to How the Brain Works",
+  "Stress and Coping",
+  "Industrial-Organizational Psychology",
+  "Negotiation and Conflict Resolution",
+  "Power and Politics in Organizations",
+  "Data and Decisions",
+  "General Biology Lecture",
+  "General Biology Lecture and Laboratory",
+  "The Beauty and Joy of Computing",
+  "The Structure and Interpretation of Computer Programs",
+  "Great Ideas of Computer Architecture (Machine Structures)",
+  "Discrete Mathematics and Probability Theory",
+  "Prototyping & Fabrication",
+  "Tutoring in Science and Mathematics",
+  "Technology Leadership: Enterpreneurship",
+  "Introduction to Environmental Design",
+  "Introduction to Environmental Economics and Policy",
+  "The Water Planet",
+  "Marine Mammals",
+  "Origins and Evolution of Food Plants",
+  "Drawing a Green Future: Fundamentals of Visual Representation and Creativity",
+  "Environmental Science for Sustainable Development",
+  "Abstract Linear Algebra",
+  "Linear Algebra and Differential Equations",
+  "Discrete Mathematics",
+  "Genetics, Genomics and Cell Biology",
+  "Special Topics in Media Studies - U.S. Consumerism: A Critical Study of Marketing Today",
+  "Evaluation of Evidence",
+  "Concepts of Probability",
+  "Introduction to Probability and Statistics"
+];
+
+function stdName(name) {
+  return (name || "").toLowerCase().replace(/[^a-z0-9 ]/g, "").replace(/\s+/g, " ").trim();
+}
+
+const FEATURED_SET = new Set(FEATURED_NAMES_RAW.map(stdName));
+
+function isFeaturedCourse(course) {
+  const s = stdName(course?.name);
+  if (!s) return false;
+  if (FEATURED_SET.has(s)) return true;
+  for (const f of FEATURED_SET) {
+    if (s.includes(f) || f.includes(s)) return true;
+  }
+  return false;
+}
+
 const DAY_ORDER = ["M", "Tu", "W", "Th", "F"];
 const DAY_LABELS = {
   M: "Mon",
@@ -1264,6 +1339,7 @@ export default function App() {
   const [hideHighWeekdayCourses, setHideHighWeekdayCourses] = useState(false);
   const [hideThreeWeekdayCourses, setHideThreeWeekdayCourses] = useState(false);
   const [useOverlapBias, setUseOverlapBias] = useState(true);
+  const [showOnlyFeatured, setShowOnlyFeatured] = useState(false);
   const [mouseUpCourseId, setMouseUpCourseId] = useState(null);
   const [mouseUpTimerId, setMouseUpTimerId] = useState(null);
   const [previewCourseId, setPreviewCourseId] = useState(null);
@@ -1341,9 +1417,12 @@ export default function App() {
       if (hideHighWeekdayCourses && weekdayCount >= 4) {
         return false;
       }
+      if (showOnlyFeatured && !isFeaturedCourse(course)) {
+        return false;
+      }
       return true;
     });
-  }, [currentCourses, hideHighWeekdayCourses, hideThreeWeekdayCourses, hiddenSet]);
+  }, [currentCourses, hideHighWeekdayCourses, hideThreeWeekdayCourses, hiddenSet, showOnlyFeatured]);
   const selectedCourses = useMemo(
     () => visibleCourses.filter((course) => selectedSet.has(course.id)),
     [selectedSet, visibleCourses]
@@ -1471,6 +1550,14 @@ export default function App() {
           />
           <span>겹침 랜덤 bias 사용</span>
         </label>
+        <label className="global-filter">
+          <input
+            type="checkbox"
+            checked={showOnlyFeatured}
+            onChange={(event) => setShowOnlyFeatured(event.target.checked)}
+          />
+          <span>관심 과목만 보기 ★</span>
+        </label>
         <button type="button" className="global-action-button" onClick={resetHiddenCourses}>
           현재 UC 숨김 목록 초기화 ({(hiddenBySchool?.[activeSchool] || []).length})
         </button>
@@ -1498,13 +1585,14 @@ export default function App() {
               const isSelected = selectedSet.has(course.id);
               const isMouseUp = mouseUpCourseId === course.id;
               const weekdayCount = getCourseWeekdayCount(course);
-              return (
+               const isFeatured = isFeaturedCourse(course);
+               return (
                 <div key={course.id} className="course-row">
                   <button
                     type="button"
                     className={`course-item${isSelected ? " active" : ""}${
                       isMouseUp ? " course-item--release" : ""
-                    }${course.session ? ` course-item--session-${course.session}` : ""}`}
+                    }${course.session ? ` course-item--session-${course.session}` : ""}${isFeatured ? " course-item--featured" : ""}`}
                     onClick={() => toggle(course.id)}
                     onMouseUp={() => handleCourseMouseUp(course.id)}
                     onMouseEnter={() => setPreviewCourseId(course.id)}
@@ -1512,6 +1600,7 @@ export default function App() {
                   >
                     <span className="course-day-count">{weekdayCount}</span>
                     {course.session ? <span className="course-session-badge">S{course.session}</span> : null}
+                    {isFeatured ? <span className="course-featured-badge">★</span> : null}
                     <span className="course-name">{course.name}</span>
                   </button>
                   <button
